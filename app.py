@@ -1,11 +1,6 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 from io import BytesIO
-
-# ====================================================
-# CONFIGURATION
-# ====================================================
 
 st.set_page_config(
     page_title="Smart Beta Maroc",
@@ -14,46 +9,10 @@ st.set_page_config(
 
 st.title("📈 Smart Beta Maroc")
 
-st.markdown(
-    """
-    Application de calcul Smart Beta :
-    - Value
-    - Quality
-    - Momentum
-    - Low Volatility
-    """
-)
-
-# ====================================================
-# UPLOAD
-# ====================================================
-
 uploaded_file = st.file_uploader(
-    "Charger le fichier Excel Smart Beta",
+    "Charger le fichier Smart Beta",
     type=["xlsx"]
 )
-
-# ====================================================
-# FONCTIONS
-# ====================================================
-
-def score_rank(series, ascending=False):
-
-    n = len(series)
-
-    ranks = series.rank(
-        method="min",
-        ascending=ascending
-    )
-
-    scores = (
-        (n - ranks)
-        / (n - 1)
-        * 100
-    )
-
-    return scores
-
 
 def export_excel(df):
 
@@ -67,177 +26,104 @@ def export_excel(df):
         df.to_excel(
             writer,
             index=False,
-            sheet_name="SmartBeta"
+            sheet_name="Classement"
         )
 
     return output.getvalue()
 
 
-# ====================================================
-# TRAITEMENT
-# ====================================================
-
-if uploaded_file:
+if uploaded_file is not None:
 
     try:
 
-        sheets = pd.ExcelFile(uploaded_file)
+        xls = pd.ExcelFile(uploaded_file)
 
         st.success("Fichier chargé avec succès")
 
         st.write("Feuilles détectées :")
+        st.write(xls.sheet_names)
 
-        st.write(sheets.sheet_names)
+        # Lecture brute de la feuille Recap Scores
 
-        sheet = st.selectbox(
-            "Choisir la feuille contenant les facteurs",
-            sheets.sheet_names
-        )
-
-        df = pd.read_excel(
+        recap = pd.read_excel(
             uploaded_file,
-            sheet_name=sheet
+            sheet_name="Recap Scores",
+            header=None
         )
 
-        st.subheader("Données")
+        st.subheader("Recap Scores (brut)")
 
-        st.dataframe(df)
+        st.dataframe(recap)
 
         st.divider()
 
-        st.subheader("Paramètres")
+        st.subheader("Extraction automatique")
 
-        w_value = st.slider(
-            "Poids Value",
-            0.0,
-            1.0,
-            0.30
-        )
+        lignes = []
 
-        w_quality = st.slider(
-            "Poids Quality",
-            0.0,
-            1.0,
-            0.30
-        )
+        for i in range(len(recap)):
 
-        w_momentum = st.slider(
-            "Poids Momentum",
-            0.0,
-            1.0,
-            0.20
-        )
+            try:
 
-        w_lowvol = st.slider(
-            "Poids Low Vol",
-            0.0,
-            1.0,
-            0.20
-        )
+                valeur = str(recap.iloc[i, 0])
 
-        if st.button("Calculer Smart Beta"):
+                score = recap.iloc[i, 1]
 
-            data = df.copy()
+                if pd.notna(score):
 
-            cols = data.columns.tolist()
+                    score = float(score)
 
-            st.write("Colonnes disponibles :", cols)
+                    if 0 <= score <= 100:
 
-            # Exemple attendu :
-            # Société | PE | ROE | Momentum | Volatility
+                        lignes.append(
+                            [valeur, score]
+                        )
 
-            required = [
-                "PE",
-                "ROE",
-                "Momentum",
-                "Volatility",
+            except:
+                pass
+
+        classement = pd.DataFrame(
+            lignes,
+            columns=[
+                "Valeur",
+                "Score Composite"
             ]
+        )
 
-            missing = [
-                c
-                for c in required
-                if c not in data.columns
-            ]
+        classement = classement.sort_values(
+            "Score Composite",
+            ascending=False
+        )
 
-            if len(missing) > 0:
+        classement["Poids"] = (
+            classement["Score Composite"]
+            /
+            classement["Score Composite"].sum()
+        )
 
-                st.error(
-                    f"Colonnes manquantes : {missing}"
-                )
+        st.subheader("Classement Smart Beta")
 
-            else:
+        st.dataframe(classement)
 
-                data["ValueScore"] = score_rank(
-                    data["PE"],
-                    ascending=True
-                )
+        st.bar_chart(
+            classement.set_index(
+                "Valeur"
+            )["Score Composite"]
+        )
 
-                data["QualityScore"] = score_rank(
-                    data["ROE"],
-                    ascending=False
-                )
+        fichier_excel = export_excel(
+            classement
+        )
 
-                data["MomentumScore"] = score_rank(
-                    data["Momentum"],
-                    ascending=False
-                )
-
-                data["LowVolScore"] = score_rank(
-                    data["Volatility"],
-                    ascending=True
-                )
-
-                data["CompositeScore"] = (
-
-                    w_value
-                    * data["ValueScore"]
-
-                    + w_quality
-                    * data["QualityScore"]
-
-                    + w_momentum
-                    * data["MomentumScore"]
-
-                    + w_lowvol
-                    * data["LowVolScore"]
-                )
-
-                data = data.sort_values(
-                    "CompositeScore",
-                    ascending=False
-                )
-
-                data["Weight"] = (
-                    data["CompositeScore"]
-                    /
-                    data["CompositeScore"].sum()
-                )
-
-                st.success(
-                    "Calcul Smart Beta terminé"
-                )
-
-                st.subheader(
-                    "Classement Smart Beta"
-                )
-
-                st.dataframe(data)
-
-                st.bar_chart(
-                    data.set_index(
-                        data.columns[0]
-                    )["CompositeScore"]
-                )
-
-                excel_file = export_excel(data)
-
-                st.download_button(
-                    label="📥 Télécharger Excel",
-                    data=excel_file,
-                    file_name="SmartBeta_Resultat.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+        st.download_button(
+            "📥 Télécharger Excel",
+            data=fichier_excel,
+            file_name="SmartBeta_Classement.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
     except Exception as e:
 
-        st.error(str(e))
+        st.error(
+            f"Erreur : {e}"
+        )
