@@ -1,0 +1,11 @@
+git init
+
+git add .
+
+git commit -m "Initial Smart Beta Maroc"
+
+git branch -M main
+
+git remote add origin https://github.com/votre_compte/smart-beta-maroc.git
+
+git push -u origin main
