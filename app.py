@@ -2,10 +2,6 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-# ===================================================
-# PARAMETRES
-# ===================================================
-
 st.set_page_config(
     page_title="Smart Beta Maroc",
     layout="wide"
@@ -13,25 +9,12 @@ st.set_page_config(
 
 st.title("📈 Smart Beta Maroc")
 
-st.markdown("""
-### Modèle Smart Beta Maroc
-
-Facteurs utilisés :
-
-- Value
-- Quality
-- Momentum
-- Low Volatility
-
-Chargement du fichier Excel Smart Beta.
-""")
-
-# ===================================================
-# EXPORT EXCEL
-# ===================================================
+uploaded_file = st.file_uploader(
+    "Charger le fichier Smart Beta",
+    type=["xlsx"]
+)
 
 def export_excel(df):
-
     output = BytesIO()
 
     with pd.ExcelWriter(
@@ -41,26 +24,13 @@ def export_excel(df):
 
         df.to_excel(
             writer,
-            index=False,
-            sheet_name="Portefeuille"
+            sheet_name="Portefeuille",
+            index=False
         )
 
     return output.getvalue()
 
-# ===================================================
-# UPLOAD
-# ===================================================
-
-uploaded_file = st.file_uploader(
-    "Charger le fichier Smart Beta",
-    type=["xlsx"]
-)
-
-# ===================================================
-# TRAITEMENT
-# ===================================================
-
-if uploaded_file:
+if uploaded_file is not None:
 
     try:
 
@@ -69,26 +39,42 @@ if uploaded_file:
             sheet_name="Facteurs"
         )
 
-        st.success(
-            "Fichier chargé avec succès"
-        )
+        # Nettoyage
+        df.columns = [str(c).strip() for c in df.columns]
 
-        # Suppression lignes vides éventuelles
+        # Conversion numérique
+        cols_num = [
+            "PE",
+            "ROE",
+            "Momentum",
+            "Volatilite",
+            "ValueScore",
+            "QualityScore",
+            "MomentumScore",
+            "LowVolScore",
+            "CompositeScore",
+            "Poids"
+        ]
+
+        for col in cols_num:
+            if col in df.columns:
+                df[col] = pd.to_numeric(
+                    df[col],
+                    errors="coerce"
+                )
 
         df = df.dropna(
             subset=["Valeur"]
         )
 
-        # Tri classement
-
         classement = df.sort_values(
-            "CompositeScore",
+            by="CompositeScore",
             ascending=False
         )
 
-        # ===================================================
-        # INDICATEURS
-        # ===================================================
+        st.success(
+            "Fichier chargé avec succès"
+        )
 
         col1, col2, col3 = st.columns(3)
 
@@ -106,23 +92,18 @@ if uploaded_file:
         )
 
         col3.metric(
-            "Poids total",
+            "Poids total %",
             round(
-                classement["Poids"].sum()*100,
+                classement["Poids"].sum() * 100,
                 2
             )
         )
-
-        # ===================================================
-        # TOP 10
-        # ===================================================
 
         st.subheader(
             "🏆 Top 10 Smart Beta"
         )
 
         st.dataframe(
-
             classement[
                 [
                     "Valeur",
@@ -130,39 +111,57 @@ if uploaded_file:
                     "Poids"
                 ]
             ].head(10)
-
         )
 
-        # ===================================================
-        # PORTEFEUILLE COMPLET
-        # ===================================================
-
         st.subheader(
-            "📋 Portefeuille complet"
+            "📊 Portefeuille complet"
         )
 
         st.dataframe(
-            classement
+            classement,
+            use_container_width=True
         )
-
-        # ===================================================
-        # GRAPHIQUE SCORE
-        # ===================================================
 
         st.subheader(
             "Classement Smart Beta"
         )
 
-        chart = classement.set_index(
+        chart_df = classement[
+            ["Valeur", "CompositeScore"]
+        ].copy()
+
+        chart_df = chart_df.set_index(
             "Valeur"
-        )["CompositeScore"]
+        )
 
-        st.bar_chart(chart)
-
-        # ===================================================
-        # REPARTITION DES POIDS
-        # ===================================================
+        st.bar_chart(chart_df)
 
         st.subheader(
-            "Répartition des poids"
+            "Poids du portefeuille"
+        )
+
+        poids_df = classement[
+            ["Valeur", "Poids"]
+        ]
+
+        st.dataframe(
+            poids_df,
+            use_container_width=True
+        )
+
+        excel_file = export_excel(
+            classement
+        )
+
+        st.download_button(
+            label="📥 Télécharger Excel",
+            data=excel_file,
+            file_name="Portefeuille_Smart_Beta.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+    except Exception as e:
+
+        st.error(
+            f"Erreur : {str(e)}"
         )
